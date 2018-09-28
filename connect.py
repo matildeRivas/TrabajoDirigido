@@ -1,10 +1,11 @@
 import psycopg2
 import sys
 import pprint
+import config
  
 def main():
 	#Define our connection string
-	conn_string = "host='localhost' dbname='trabajodirigido' user='matilde' password=''"
+	conn_string = "host='localhost' dbname='trabajodirigido' user='" + config.user + "' password=" + config.password
  
 	# print the connection string we will use to connect
 	print "Connecting to database\n	->%s" % (conn_string)
