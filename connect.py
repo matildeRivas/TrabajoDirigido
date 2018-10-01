@@ -1,32 +1,33 @@
 import psycopg2
 import sys
 import pprint
-import config
+from config import config
 from queries import *
 
 def main():
-	executeQuery(connect(sys.argv[1]), pointsQuery)
+	executeQuery(connect(), redVialQuery)
 
-	
-#Connects to given database using credentials in config file
-#TODO return cursor
-def connect(dbname):
-	#Define our connection string
-	conn_string = "host='localhost' dbname='" + dbname +"' user='" + config.user + "' password=" + config.password
- 
-	# print the connection string we will use to connect
-	print("Connecting to database\n	->" + conn_string)
- 
-	# get a connection, if a connect cannot be made an exception will be raised here
-	conn = psycopg2.connect(conn_string)
- 
-	# conn.cursor will return a cursor object, you can use this cursor to perform queries
-	cursor = conn.cursor()
-	print('Connected!\n')
+#Connects to database using credentials obtained with config
+def connect():
+	conn = None
+	try:
+        # read connection parameters
+		params = config()
+        # connect to the PostgreSQL server
+		print('Connecting to the PostgreSQL database')
+		conn = psycopg2.connect(**params)
+		# create a cursor
+		cursor = conn.cursor()
+		# conn.cursor will return a cursor object, you can use this cursor to perform queries
+		cursor = conn.cursor()
+		print('Connected!\n')
+
+	except (Exception, psycopg2.DatabaseError) as error:
+		print(error)
 
 	return cursor
 	
-	
+
 #Executes a query in a database, query is a string
 def executeQuery(cursor, query):
 	# execute our Query
@@ -37,7 +38,8 @@ def executeQuery(cursor, query):
  
 	# print out the records using pretty print
 	pprint.pprint(records)
-
 	
+
 if __name__ == "__main__":
 	main()
+
