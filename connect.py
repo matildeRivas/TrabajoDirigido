@@ -157,7 +157,8 @@ def intersectionsQueries(cursor, mapName, pathType):
 
 	# update paths table with additional information: tabla_origen
 	costo = costsDictionary[pathType]
-	cursor.execute("update table %s set tabla_origen = %s, ;", (AsIs(pathsTableName), AsIs(mapName)))
+	cursor.execute("update %s set tabla_origen = %s, largo = ST_Distance_Sphere(origen, fin);", (AsIs(pathsTableName), mapName))
+	cursor.execute("update %s set costo = largo * %s;", (AsIs(pathsTableName), costo))
 	
 	cursor.execute("drop table %s; drop table %s;", ( AsIs(pointsTableName), AsIs(filteredTableName)))
 
