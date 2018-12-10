@@ -7,10 +7,15 @@ from queries import *
 import datetime
 
 def main(argv):
-	#TODO enviar tipo y costo por tramo
-	connect(sys.argv[1], sys.argv[2] )
+	if(len(sys.argv) < 3 or len(sys.argv) > 3):
+		print("Debe ingresar nombre del mapa y el tipo de tramo")
+	else:
+		connect(sys.argv[1], sys.argv[2] )
 
 #Connects to database using credentials obtained with config
+# @params:
+# name of table containing map, geometry column must de named "geom"
+# type of path: nada, postacion, ferry or directo 
 def connect(tableToInsersect, pathType):
 	conn = None
 	try:
@@ -40,12 +45,13 @@ def connect(tableToInsersect, pathType):
 		if conn is not None:
 			conn.close()
 
+# cost per type
 costsDictionary = {
 	"nada" : 25000,
 	"postacion" : 17000
 }
 costsDictionary["ferry"] = costsDictionary["nada"]*2
-costsDictionary["directo"] = costsDictionary["nada"]*1000000
+costsDictionary["fibra"] = costsDictionary["nada"]*2
 
 
 def processPoints(points):
@@ -69,14 +75,15 @@ def processPoints(points):
 	return data
 
 
+def within(p, q, r):
+	return (p >= q and p <= r) or ((p <= q and p >= r))
+
+
 def findIntersections(segments, cursor, tableName, filteredTableName):
 	i = 0
 	#TODO: optimize
 	for (L1, v1) in segments.items():
 		for (L2, v2) in segments.items():
-			if(i%100==0):
-				print(i)
-			i+=1
 			if(v1["id"]>v2["id"]):
 				D = v1["A"]*v2["B"] - v1["B"]*v2["A"]
 				# hay interseccion
@@ -85,14 +92,15 @@ def findIntersections(segments, cursor, tableName, filteredTableName):
 					Dy = v1["A"] * v2["C"] - v1["C"] * v2["A"]
 					x = Dx/D
 					y = Dy/D
-					#TODO: only do this if intersecting point (x, y) is contained in one of the segments
-					cursor.execute("with line1 (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(%s, %s), ST_MakePoint(%s, %s)), %s, %s ) ,\
-					line2 (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(%s, %s), ST_MakePoint(%s, %s)), %s, %s )\
-					insert into %s select ST_intersection(a.geom, b.geom), a.origin_id, b.origin_id from line1 a, line2 b WHERE a.id=%s and b.id=%s AND ST_Intersects(a.geom,b.geom)\
-					and not ST_Equals(ST_EndPoint(a.geom), ST_StartPoint(b.geom)) and not ST_Equals(ST_EndPoint(b.geom), ST_StartPoint(a.geom));", \
-					(v1["x1"], v1["y1"], v1["x2"], v1["y2"], v1["origin_id"], v1["id"],\
-					v2["x1"], v2["y1"], v2["x2"], v2["y2"], v2["origin_id"], v2["id"] \
-					,AsIs(tableName), v1["id"], v2["id"]))
+					if within(x, v1["x1"], v1["x2"]) or within(x, v2["x1"], v2["x2"]) and within(y, v1["y1"], v1["y2"]) or within(y, v2["y1"], v2["y2"]):
+						#TODO: only do this if intersecting point (x, y) is contained in one of the segments
+						cursor.execute("with line1 (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(%s, %s), ST_MakePoint(%s, %s)), %s, %s ) ,\
+						line2 (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(%s, %s), ST_MakePoint(%s, %s)), %s, %s )\
+						insert into %s select ST_intersection(a.geom, b.geom), a.origin_id, b.origin_id from line1 a, line2 b WHERE a.id=%s and b.id=%s AND ST_Intersects(a.geom,b.geom)\
+						and not ST_Equals(ST_EndPoint(a.geom), ST_StartPoint(b.geom)) and not ST_Equals(ST_EndPoint(b.geom), ST_StartPoint(a.geom));", \
+						(v1["x1"], v1["y1"], v1["x2"], v1["y2"], v1["origin_id"], v1["id"],\
+						v2["x1"], v2["y1"], v2["x2"], v2["y2"], v2["origin_id"], v2["id"] \
+						,AsIs(tableName), v1["id"], v2["id"]))
 				# no hay interseccion
 				else:
 					pass
@@ -128,7 +136,6 @@ def intersectionsQueries(cursor, mapName, pathType):
 	# find intersections
 	print("finding intersections")
 	findIntersections(pointsDict, cursor, intersectionsName, filteredTableName)
-	#cursor.execute("with lines (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(p.x1, p.y1), ST_MakePoint(p.x2, p.y2)), p.origin_id, p.id from %s as p) insert into %s select ST_intersection(a.geom, b.geom), a.origin_id, b.origin_id from lines a, lines b where ST_Intersects (a.geom,b.geom) AND a.id<b.id and not ST_Equals(ST_EndPoint(a.geom), ST_StartPoint(b.geom)) and not ST_Equals(ST_EndPoint(b.geom), ST_StartPoint(a.geom));", (AsIs(filteredTableName), AsIs(intersectionsName)))
 	print("found intersections")
 	index = mapName+"geomIndex"
 	# create paths table
@@ -150,15 +157,19 @@ def intersectionsQueries(cursor, mapName, pathType):
 	select ST_GeometryN(a.geomCol, num), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
 	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))),%s, a.id , ST_StartPoint(ST_GeometryN(a.geomCol, num)), \
 	ST_EndPoint(ST_GeometryN(a.geomCol, num))  from a, series;", (AsIs(mapName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName), pathType))
-	
+	# insert rest of segments
 	cursor.execute("insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) select geom, ST_X(ST_StartPoint(geom)), ST_Y(ST_StartPoint(geom)), \
 	ST_X(ST_EndPoint(geom)), ST_Y(ST_EndPoint(geom)), %s, id, ST_StartPoint(geom), ST_EndPoint(geom) from %s where id not in (select id_origen from %s)",
 	(AsIs(pathsTableName), pathType ,AsIs(mapName), AsIs(pathsTableName)) )
-
-	# update paths table with additional information: tabla_origen
+	pathIndex = pathsTableName+"GeomIndex"
+	cursor.execute("create index %s on %s using GIST (camino);", (AsIs(pathIndex), AsIs(pathsTableName)))
+	# update paths table with additional information: tabla_origen, haversine distance (in meters) and total cost
 	costo = costsDictionary[pathType]
-	cursor.execute("update %s set tabla_origen = %s, largo = ST_Distance_Sphere(origen, fin);", (AsIs(pathsTableName), mapName))
-	cursor.execute("update %s set costo = largo * %s;", (AsIs(pathsTableName), costo))
+	cursor.execute("with line_counts (cts, id) as (select ST_NPoints(camino) - 1, id from %s),\
+	 series(num, id) as (select generate_series(1, cts), id from line_counts),\
+	 dist(d, id) as (select sum(ST_DistanceSphere(ST_PointN(camino, num), ST_PointN(camino, num+1))), m.id from series inner join %s m on series.id = m.id group by m.id) \
+	 update %s mapa set tabla_origen = %s, largo = dist.d from dist where mapa.id=dist.id ;", (AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName), mapName))
+	cursor.execute("update %s set costo = largo/1000 * %s;", (AsIs(pathsTableName), costo))
 	
 	cursor.execute("drop table %s; drop table %s;", ( AsIs(pointsTableName), AsIs(filteredTableName)))
 
