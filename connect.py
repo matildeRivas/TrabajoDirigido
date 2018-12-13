@@ -53,7 +53,9 @@ costsDictionary = {
 costsDictionary["ferry"] = costsDictionary["nada"]*2
 costsDictionary["fibra"] = costsDictionary["nada"]*2
 
-
+# turns table with segments into a dictionary, adding information needed later
+# @params:
+# PSQL table with a segment's start and endpoint coordinates, id, and the id of the original segment
 def processPoints(points):
 	data = {}
 	points=sorted(points, key=lambda x:x[1])
@@ -75,12 +77,15 @@ def processPoints(points):
 	return data
 
 
+# Determines whether a number is between other two
+# @params:
+# number in question
+# boundaries
 def within(p, q, r):
 	return (p >= q and p <= r) or ((p <= q and p >= r))
 
-
+# Finds all intersections in a map
 def findIntersections(segments, cursor, tableName, filteredTableName):
-	i = 0
 	#TODO: optimize
 	for (L1, v1) in segments.items():
 		for (L2, v2) in segments.items():
@@ -106,7 +111,7 @@ def findIntersections(segments, cursor, tableName, filteredTableName):
 					pass
 
 
-#Finds all intersections in a map
+# Creates a map with all paths 
 def intersectionsQueries(cursor, mapName, pathType):
 	# Convert map to points, save it into table called "mapName_points"
 	# create new table "mapName_points"
