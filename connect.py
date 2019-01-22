@@ -1,7 +1,6 @@
 import psycopg2
 from psycopg2.extensions import AsIs
 import sys
-import pprint
 from config import config
 from queries import *
 import datetime
@@ -45,6 +44,7 @@ def connect(tableToInsersect, pathType):
 		if conn is not None:
 			conn.close()
 
+
 # cost per type
 costsDictionary = {
 	"nada" : 25000,
@@ -53,6 +53,7 @@ costsDictionary = {
 costsDictionary["ferry"] = costsDictionary["nada"]*2
 costsDictionary["fibra"] = costsDictionary["nada"]*2
 
+
 # turns table with segments into a dictionary, adding information needed later
 # @params:
 # PSQL table with a segment's start and endpoint coordinates, id, and the id of the original segment
@@ -60,9 +61,9 @@ def processPoints(points):
 	data = {}
 	points=sorted(points, key=lambda x:x[1])
 	for i in points:
-		a = i[3] - i[1] #B.y - A.y
-		b = i[0] - i[2] #A.x - B.x
-		c = a*i[0] + b*i[1] #a*A.x + b*A.y
+		a = i[3] - i[1] # B.y - A.y
+		b = i[0] - i[2] # A.x - B.x
+		c = a*i[0] + b*i[1] # a*A.x + b*A.y
 		segment = {}
 		segment["origin_id"]=i[4]
 		segment["id"]=i[5]
@@ -98,7 +99,6 @@ def findIntersections(segments, cursor, tableName, filteredTableName):
 					x = Dx/D
 					y = Dy/D
 					if within(x, v1["x1"], v1["x2"]) or within(x, v2["x1"], v2["x2"]) and within(y, v1["y1"], v1["y2"]) or within(y, v2["y1"], v2["y2"]):
-						#TODO: only do this if intersecting point (x, y) is contained in one of the segments
 						cursor.execute("with line1 (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(%s, %s), ST_MakePoint(%s, %s)), %s, %s ) ,\
 						line2 (geom, origin_id, id) as (select ST_MakeLine(ST_MakePoint(%s, %s), ST_MakePoint(%s, %s)), %s, %s )\
 						insert into %s select ST_intersection(a.geom, b.geom), a.origin_id, b.origin_id from line1 a, line2 b WHERE a.id=%s and b.id=%s AND ST_Intersects(a.geom,b.geom)\
@@ -152,14 +152,14 @@ def intersectionsQueries(cursor, mapName, pathType):
 
 	# split lines according to intersections, inserting both halves in paths table
 	cursor.execute("with a (geomCol, id) as (select ST_Split(m.geom, i.geom), origin_a from %s m, %s i where m.id=i.origin_a),\
-	 series (num) as (select generate_series(0, 2)) \
+	 series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
 	select ST_GeometryN(a.geomCol, num), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
 	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))),%s, a.id , ST_StartPoint(ST_GeometryN(a.geomCol, num)), \
 	ST_EndPoint(ST_GeometryN(a.geomCol, num))  from a, series;", (AsIs(mapName), AsIs(intersectionsName), AsIs(pathsTableName), pathType))
 	
 	cursor.execute("with a (geomCol, id) as (select ST_Split(m.geom, i.geom), origin_b from %s m, %s i where m.id=i.origin_b and m.id not in (select id from %s) ),\
-	series (num) as (select generate_series(0, 2)) \
+	series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
 	select ST_GeometryN(a.geomCol, num), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
 	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))),%s, a.id , ST_StartPoint(ST_GeometryN(a.geomCol, num)), \
@@ -178,7 +178,7 @@ def intersectionsQueries(cursor, mapName, pathType):
 	 update %s mapa set tabla_origen = %s, largo = dist.d from dist where mapa.id=dist.id ;", (AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName), mapName))
 	cursor.execute("update %s set costo = largo/1000 * %s;", (AsIs(pathsTableName), costo))
 	
-	cursor.execute("drop table %s; drop table %s;", ( AsIs(pointsTableName), AsIs(filteredTableName)))
+	cursor.execute("drop table %s; drop table %s;", (AsIs(pointsTableName), AsIs(filteredTableName)))
 
 if __name__ == "__main__":
 	main(sys.argv)

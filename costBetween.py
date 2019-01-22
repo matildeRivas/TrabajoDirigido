@@ -37,7 +37,6 @@ def connect(origin, end, pathsMap):
 		# commit the changes
 		print("commited")
 		conn.commit()
-		print(timeDelta)
 	except (Exception, psycopg2.DatabaseError) as error:
 		print(error)
 	finally:
