@@ -19,6 +19,6 @@ a = cursor.fetchall()
 conn.close()
 g = read("foa.ncol", format="ncol", directed=False)
 layout = g.layout("kk")
-g.vs["label"] = g.vs["name"]
+#g.vs["label"] = g.vs["name"]
 plot(g, layout=layout)
 
