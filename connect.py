@@ -165,15 +165,15 @@ def intersectionsQueries(cursor, mapName, pathType):
 	cursor.execute("create index %s on %s using GIST (geom);  analyze %s;",
 								 (AsIs(index), AsIs(intersectionsName), AsIs(intersectionsName)))
 	# split lines according to intersections, inserting both halves in paths table
-	cursor.execute("with a (geomCol, id) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_a from %s m, %s i where m.id=i.origin_a),\
+	cursor.execute("with a (geomCol, id) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_a from %s m, %s i where m.id=i.origin_a and m.id not in (select id_origen from %s)),\
 	 series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
 	select ST_GeometryN(a.geomCol, num), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
 	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))),%s, a.id , ST_StartPoint(ST_GeometryN(a.geomCol, num)), \
 	ST_EndPoint(ST_GeometryN(a.geomCol, num))  from a, series;",
-								 (AsIs(truncatedTableName), AsIs(intersectionsName), AsIs(pathsTableName), pathType))
+								 (AsIs(truncatedTableName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName), pathType))
 
-	cursor.execute("with a (geomCol, id) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_b from %s m, %s i where m.id=i.origin_b and m.id not in (select id from %s) ),\
+	cursor.execute("with a (geomCol, id) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_b from %s m, %s i where m.id=i.origin_b and m.id not in (select id_origen from %s) ),\
 	series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
 	select ST_GeometryN(a.geomCol, num), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
