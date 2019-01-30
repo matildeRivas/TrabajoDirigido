@@ -1,4 +1,4 @@
-## Título bacan
+## Yafûn
 Dado un mapa (POSTGIS) con geometría linestring, encuentra intersecciones entre las geometrías y crea un nuevo mapa con los caminos entre estas.
 La nueva tabla tiene los siguientes atributos:
 `camino` linestring del camino,
