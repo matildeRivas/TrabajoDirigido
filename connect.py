@@ -190,6 +190,9 @@ def intersectionsQueries(cursor, mapName, pathType):
 	cursor.execute("create index %s on %s using GIST (camino);  analyze %s;",
 								 (AsIs(pathIndex), AsIs(pathsTableName), AsIs(pathsTableName)))
 	# update paths table with additional information: tabla_origen, haversine distance (in meters) and total cost
+	cursor.execute(
+		"delete from %s a where a.camino in (select p.camino from %s p, %s b where ST_covers(ST_snap(p.camino, b.camino, 0.00001), b.camino) and b.id!=p.id) ;",
+		(AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName)))
 	costo = costsDictionary[pathType]
 	cursor.execute("with line_counts (cts, id) as (select ST_NPoints(camino) - 1, id from %s),\
 	 series(num, id) as (select generate_series(1, cts), id from line_counts),\
