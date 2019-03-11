@@ -17,16 +17,16 @@ def main(argv):
 	g.add_edges(((0, 1), (1, 2), (2, 3), (0, 4), (4, 3), (4, 5), (3, 5), (3, 7), (5, 6), (6, 7), (7, 8)))
 	g.es["weight"] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
-	#suurballe(g, 0, False)
-	main_suurballe("mapa.ncol")
+	# suurballe(g, 0, False)
+	main_suurballe("out.ncol")
 
 
 def main_suurballe(graph_file):
 	g = read(graph_file, format='ncol', directed=False)
 	layout = g.layout("kk")
-	g.vs["label"] = g.vs["name"]
-	g.es["label"] = g.es["weight"]
-	plot(g, layout=layout, bbox=(1000, 1000), margin=200)
+	# g.vs["label"] = g.vs["name"]
+	# g.es["label"] = g.es["weight"]
+	# plot(g, layout=layout, bbox=(1000, 1000), margin=200)
 	# todo: por cada punto en puntos por conectar, hacer suurballe. Guardar info
 	print(suurballe(g, 0, False))
 
@@ -44,10 +44,12 @@ def suurballe(graph, vertex, directed=False):
 		tree_edges = list(set(tree_edges) | set(e))
 	distance = graph.shortest_paths(vertex, weights="weight")[0]
 	shortest_path = get_edges(graph, edge_path)
+	# problem_vertex contains vertices without two paths
 	problem_vertex = []
-	# create transformed graph Gv for each V. Future: one unified graph
 	result = []
+	success = []
 
+	# create transformed graph Gv for each V. Future: one unified graph
 	for v in range(len(graph.vs)):
 		if (distance[v] != float("inf") and v != vertex):
 			gv = Graph(directed=True)
@@ -65,14 +67,19 @@ def suurballe(graph, vertex, directed=False):
 			path_1 = get_path(union, vertex, v)
 			try:
 				path_2 = get_path(union, vertex, v)
+				success.append((v, path_1, path_2))
 				result.append((path_1, path_2))
 			except Exception:
 				result.append((path_1))
 				problem_vertex.append(v)
 
-		else:
-			result.append(())
+		# if vertex is unreachable
+		elif distance[v] == float("inf"):
+			result.append([])
+			problem_vertex.append(v)
 
+		else:
+			result.append([])
 	return result
 
 
