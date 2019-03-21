@@ -7,17 +7,17 @@ import datetime
 
 
 def main(argv):
-	if (len(sys.argv) < 3 or len(sys.argv) > 3):
-		print("Debe ingresar nombre del mapa y el tipo de tramo")
+	if (len(sys.argv) < 2 or len(sys.argv) > 2):
+		print("Debe ingresar nombre del mapa ")
 	else:
-		connect(sys.argv[1], sys.argv[2])
+		connect(sys.argv[1])
 
 
 # Connects to database using credentials obtained with config
 # @params:
 # name of table containing map, geometry column must de named "geom"
 # type of path: nada, postacion, ferry or directo 
-def connect(tableToInsersect, pathType):
+def connect(tableToInsersect):
 	conn = None
 	try:
 		# read connection parameters
@@ -32,7 +32,7 @@ def connect(tableToInsersect, pathType):
 		cursor = conn.cursor()
 		# execute queries to find intersections
 		currentTime = datetime.datetime.now()
-		intersectionsQueries(cursor, tableToInsersect, pathType)
+		intersectionsQueries(cursor, tableToInsersect)
 		timeDelta = datetime.datetime.now() - currentTime
 		# close communication with the PostgreSQL database server
 		cursor.close()
@@ -50,10 +50,10 @@ def connect(tableToInsersect, pathType):
 # cost per type
 costsDictionary = {
 	"nada": 25000,
-	"postacion": 17000
+	"postacion": 17000,
+	"fibra": 0
 }
 costsDictionary["ferry"] = costsDictionary["nada"] * 2
-costsDictionary["fibra"] = costsDictionary["nada"] * 2
 
 
 # turns table with segments into a dictionary, adding information needed later
@@ -85,7 +85,7 @@ def processPoints(points):
 # number in question
 # boundaries
 def within(p, q, r):
-	return (p >= q and p <= r) or ((p <= q and p >= r))
+	return (p >= q and p <= r) or (p <= q and p >= r)
 
 
 # Finds all intersections in a map
@@ -116,7 +116,12 @@ def findIntersections(segments, cursor, tableName, filteredTableName):
 
 
 # Creates a map with all paths 
-def intersectionsQueries(cursor, mapName, pathType):
+def intersectionsQueries(cursor, mapName):
+	# creates table with costs
+	cursor.execute("create table costs_table (type varchar, cost_per_km int);")
+	cursor.execute(
+		"insert into costs_table values ('nada', 25000), ('postacion', 17000), ('fibra', 0), ('ferry', 50000);")
+	# truncates points in map
 	truncatedTableName = "truncated_" + mapName
 	cursor.execute("create table %s as select * from %s;", (AsIs(truncatedTableName), AsIs(mapName)))
 	cursor.execute("update %s set geom=st_snapToGrid(geom, 0.00001);", (AsIs(truncatedTableName),))
@@ -167,43 +172,44 @@ def intersectionsQueries(cursor, mapName, pathType):
 								 (AsIs(index), AsIs(intersectionsName), AsIs(intersectionsName)))
 
 	# split lines according to intersections, inserting both halves in paths table
-	cursor.execute("with a (geomCol, id) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_a from %s m, %s i where m.id=i.origin_a and m.id not in (select id_origen from %s)),\
+	cursor.execute("with a (geomCol, id, tipo) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_a, tipo from %s m, %s i where m.id=i.origin_a and m.id not in (select id_origen from %s)),\
 	 series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
 	select ST_snaptogrid(ST_GeometryN(a.geomCol, num), 0.00001), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
-	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))),%s, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
+	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))), a.tipo, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
 	ST_snaptogrid(ST_EndPoint(ST_GeometryN(a.geomCol, num)), 0.00001)  from a, series;",
-								 (AsIs(truncatedTableName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName),
-									pathType))
+								 (AsIs(truncatedTableName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName)))
 
-	cursor.execute("with a (geomCol, id) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_b from %s m, %s i where m.id=i.origin_b and m.id not in (select id_origen from %s) ),\
+	cursor.execute("with a (geomCol, id, tipo) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_b, tipo from %s m, %s i where m.id=i.origin_b and m.id not in (select id_origen from %s) ),\
 	series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
 	select ST_snaptogrid(ST_GeometryN(a.geomCol, num), 0.00001), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
-	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))),%s, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
+	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))), a.tipo, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
 	ST_snaptogrid(ST_EndPoint(ST_GeometryN(a.geomCol, num)), 0.00001)  from a, series;",
-								 (AsIs(mapName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName), pathType))
+								 (AsIs(mapName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName)))
 	# insert rest of segments
 	cursor.execute("insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) select ST_snaptogrid(geom, 0.00001), ST_X(ST_StartPoint(geom)), ST_Y(ST_StartPoint(geom)), \
-	ST_X(ST_EndPoint(geom)), ST_Y(ST_EndPoint(geom)), %s, id, ST_snaptogrid(ST_StartPoint(geom), 0.00001), ST_snaptogrid(ST_EndPoint(geom), 0.00001) from %s where id not in (select id_origen from %s)",
-								 (AsIs(pathsTableName), pathType, AsIs(truncatedTableName), AsIs(pathsTableName)))
+	ST_X(ST_EndPoint(geom)), ST_Y(ST_EndPoint(geom)), tipo, id, ST_snaptogrid(ST_StartPoint(geom), 0.00001), ST_snaptogrid(ST_EndPoint(geom), 0.00001) from %s where id not in (select id_origen from %s)",
+								 (AsIs(pathsTableName), AsIs(truncatedTableName), AsIs(pathsTableName)))
 
 	pathIndex = pathsTableName + "GeomIndex"
 	cursor.execute("create index %s on %s using GIST (camino);  analyze %s;",
 								 (AsIs(pathIndex), AsIs(pathsTableName), AsIs(pathsTableName)))
 	# update paths table with additional information: tabla_origen, haversine distance (in meters) and total cost
 	cursor.execute(
-		"delete from %s a where a.camino in (select p.camino from %s p, %s b where ST_covers(ST_snap(p.camino, b.camino, 0.00001), b.camino) and b.id!=p.id) ;",
+		"delete from %s a where a.camino in (select p.camino from %s p, %s b where ST_covers(ST_snap(p.camino, b.camino, 0.00001), b.camino) and b.id!=p.id) or a.camino = null ;",
 		(AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName)))
-	costo = costsDictionary[pathType]
+
 	cursor.execute("with line_counts (cts, id) as (select ST_NPoints(camino) - 1, id from %s),\
 	 series(num, id) as (select generate_series(1, cts), id from line_counts),\
 	 dist(d, id) as (select sum(ST_DistanceSphere(ST_PointN(camino, num), ST_PointN(camino, num+1))), m.id from series inner join %s m on series.id = m.id group by m.id) \
 	 update %s mapa set tabla_origen = %s, largo = dist.d from dist where mapa.id=dist.id ;",
 								 (AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName), mapName))
-	cursor.execute("update %s set costo = largo/1000 * %s;", (AsIs(pathsTableName), costo))
+	cursor.execute(
+		"with c(tipo, cost_per_km) as (select * from costs_table) update %s m set costo = largo/1000 * c.cost_per_km from c where m.tipo=c.tipo;",
+		(AsIs(pathsTableName),))
 
-	cursor.execute("drop table %s; drop table %s; drop table %s;",
+	cursor.execute("drop table %s; drop table %s; drop table %s; drop table costs_table;",
 								 (AsIs(pointsTableName), AsIs(filteredTableName), AsIs(truncatedTableName)))
 
 
