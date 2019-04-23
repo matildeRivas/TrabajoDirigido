@@ -77,13 +77,7 @@ def main_suurballe(map_name, points_name, cursor):
 			first = path[0]
 			second = path[1]
 			target_index = paths.index(path)
-			# si ambos caminos existen
-			if first != "[]" and second != "[]":
-				points_grid[p][target_index] = 2
-				points_grid[q][target_index] = 2
-			elif (first != "[]" and second == "[]") or (second != "[]" and first == "[]"):
-				points_grid[p][target_index] = 1
-				points_grid[q][target_index] = 1
+			fill_grid(points_grid, p, target_index, first, second)
 			# añadir caminos a lista de caminos a construir
 			path_ids = []
 			for (i, j), id in first + second:
@@ -92,6 +86,15 @@ def main_suurballe(map_name, points_name, cursor):
 			execute_values(cursor, query , path_ids)
 	print(points_grid)
 
+
+def fill_grid(points_grid, source_index, target_index, first, second):
+	# si ambos caminos existen
+	if first != "[]" and second != "[]":
+		points_grid[source_index][target_index] = 2
+		points_grid[target_index][source_index] = 2
+	elif (first != "[]" and second == "[]") or (second != "[]" and first == "[]"):
+		points_grid[source_index][target_index] = 1
+		points_grid[target_index][source_index] = 1
 
 
 def suurballe(graph, vertex, target_list, directed=False):
