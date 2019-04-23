@@ -195,11 +195,32 @@ def intersectionsQueries(cursor, mapName):
 	pathIndex = pathsTableName + "GeomIndex"
 	cursor.execute("create index %s on %s using GIST (camino);  analyze %s;",
 								 (AsIs(pathIndex), AsIs(pathsTableName), AsIs(pathsTableName)))
-	# update paths table with additional information: tabla_origen, haversine distance (in meters) and total cost
 	cursor.execute(
 		"delete from %s a where a.camino in (select p.camino from %s p, %s b where ST_covers(ST_snap(p.camino, b.camino, 0.00001), b.camino) and b.id!=p.id) or a.camino = null ;",
 		(AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName)))
 
+	# add "comunas as vertex
+	cursor.execute(
+		"create table split_paths(paths , id , tipo , id_origen ) as (select ST_Split(ST_snap(c.camino, p.pun_geom, 0.00001), p.pun_geom), id, tipo, id_origen \
+			from %s c, %s p \
+			where ST_Intersects(pun_geom, camino)); \
+		with series(num) as (select generate_series(1, 2)) \
+		 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
+		 	select ST_snaptogrid(ST_geometryN(split_paths.paths, num), 0.00001), \
+		 	ST_X(ST_StartPoint(ST_geometryN(split_paths.paths, num))), \
+		 	ST_Y(ST_StartPoint(ST_geometryN(split_paths.paths, num))), \
+			ST_X(ST_EndPoint(ST_geometryN(split_paths.paths, num))), \
+			ST_Y(ST_EndPoint(ST_geometryN(split_paths.paths, num))), \
+			split_paths.tipo, split_paths.id_origen, \
+			ST_StartPoint(ST_geometryN(split_paths.paths, num)) , \
+			ST_EndPoint(ST_geometryN(split_paths.paths, num)) \
+			from split_paths, series ;\
+		delete from %s where id in (select id from split_paths) ; \
+		drop table split_paths;",
+		(AsIs(pathsTableName), AsIs("puntos_a_conectar"), AsIs(pathsTableName), AsIs(pathsTableName))
+	)
+
+	# update paths table with additional information: tabla_origen, haversine distance (in meters) and total cost
 	cursor.execute("with line_counts (cts, id) as (select ST_NPoints(camino) - 1, id from %s),\
 	 series(num, id) as (select generate_series(1, cts), id from line_counts),\
 	 dist(d, id) as (select sum(ST_DistanceSphere(ST_PointN(camino, num), ST_PointN(camino, num+1))), m.id from series inner join %s m on series.id = m.id group by m.id) \
