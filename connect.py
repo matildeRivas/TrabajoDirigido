@@ -172,34 +172,47 @@ def intersectionsQueries(cursor, mapName):
 								 (AsIs(index), AsIs(intersectionsName), AsIs(intersectionsName)))
 
 	# split lines according to intersections, inserting both halves in paths table
-	cursor.execute("with a (geomCol, id, tipo) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_a, tipo from %s m, %s i where m.id=i.origin_a and m.id not in (select id_origen from %s)),\
+	cursor.execute("with a (geomCol, id, tipo) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_a, tipo "
+								 "from %s m, %s i where m.id=i.origin_a and m.id not in (select id_origen from %s)),\
 	 series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
-	select ST_snaptogrid(ST_GeometryN(a.geomCol, num), 0.00001), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
-	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))), a.tipo, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
+	select ST_snaptogrid(ST_GeometryN(a.geomCol, num), 0.00001), \
+	ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), \
+	ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
+	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), \
+	ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))), \
+	a.tipo, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
 	ST_snaptogrid(ST_EndPoint(ST_GeometryN(a.geomCol, num)), 0.00001)  from a, series;",
 								 (AsIs(truncatedTableName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName)))
 
-	cursor.execute("with a (geomCol, id, tipo) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_b, tipo from %s m, %s i where m.id=i.origin_b and m.id not in (select id_origen from %s) ),\
+	cursor.execute("with a (geomCol, id, tipo) as (select ST_Split(ST_snap(m.geom, i.geom, 0.00001), i.geom), origin_b, tipo\
+	 from %s m, %s i where m.id=i.origin_b and m.id not in (select id_origen from %s) ),\
 	series (num) as (select generate_series(1, 2)) \
 	insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) \
-	select ST_snaptogrid(ST_GeometryN(a.geomCol, num), 0.00001), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
-	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))), a.tipo, a.id , ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
+	select ST_snaptogrid(ST_GeometryN(a.geomCol, num), 0.00001), ST_X(ST_StartPoint(ST_GeometryN(a.geomCol, num))), \
+	ST_Y(ST_StartPoint(ST_GeometryN(a.geomCol, num))),\
+	ST_X(ST_EndPoint(ST_GeometryN(a.geomCol, num))), ST_Y(ST_EndPoint(ST_GeometryN(a.geomCol, num))), a.tipo, a.id , \
+	ST_snaptogrid(ST_StartPoint(ST_GeometryN(a.geomCol, num)), 0.00001), \
 	ST_snaptogrid(ST_EndPoint(ST_GeometryN(a.geomCol, num)), 0.00001)  from a, series;",
 								 (AsIs(mapName), AsIs(intersectionsName), AsIs(pathsTableName), AsIs(pathsTableName)))
 	# insert rest of segments
-	cursor.execute("insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) select ST_snaptogrid(geom, 0.00001), ST_X(ST_StartPoint(geom)), ST_Y(ST_StartPoint(geom)), \
-	ST_X(ST_EndPoint(geom)), ST_Y(ST_EndPoint(geom)), tipo, id, ST_snaptogrid(ST_StartPoint(geom), 0.00001), ST_snaptogrid(ST_EndPoint(geom), 0.00001) from %s where id not in (select id_origen from %s)",
+	cursor.execute("insert into %s (camino, x1, y1, x2, y2, tipo, id_origen, origen, fin) select ST_snaptogrid(geom, 0.00001),\
+	 ST_X(ST_StartPoint(geom)), ST_Y(ST_StartPoint(geom)), \
+	ST_X(ST_EndPoint(geom)), ST_Y(ST_EndPoint(geom)), tipo, id, ST_snaptogrid(ST_StartPoint(geom), 0.00001), ST_snaptogrid(ST_EndPoint(geom), 0.00001)\
+	 from %s where id not in (select id_origen from %s)",
 								 (AsIs(pathsTableName), AsIs(truncatedTableName), AsIs(pathsTableName)))
 
 	pathIndex = pathsTableName + "GeomIndex"
 	cursor.execute("create index %s on %s using GIST (camino);  analyze %s;",
 								 (AsIs(pathIndex), AsIs(pathsTableName), AsIs(pathsTableName)))
 	cursor.execute(
-		"delete from %s a where a.camino in (select p.camino from %s p, %s b where ST_covers(ST_snap(p.camino, b.camino, 0.00001), b.camino) and b.id!=p.id) or a.camino = null ;",
-		(AsIs(pathsTableName), AsIs(pathsTableName), AsIs(pathsTableName)))
+		"delete from %s a where a.camino in (select b.camino from %s p, %s b where (ST_covers(ST_snap(p.camino, b.camino, 0.00001), \
+	b.camino) and not ST_equals(p.camino, b.camino)) and b.id != p.id ) or a.camino = null ;",
+		(AsIs(pathsTableName),AsIs(pathsTableName),AsIs(pathsTableName)))
 
-	# add "comunas as vertex
+	cursor.execute("DELETE FROM %s a USING %s b WHERE a.id < b.id AND st_equals(a.camino, b.camino);",
+								 (AsIs(pathsTableName), AsIs(pathsTableName)))
+	# add "comunas" as vertex
 	cursor.execute(
 		"create table split_paths(paths , id , tipo , id_origen ) as (select ST_Split(ST_snap(c.camino, p.pun_geom, 0.00001), p.pun_geom), id, tipo, id_origen \
 			from %s c, %s p \
@@ -219,6 +232,9 @@ def intersectionsQueries(cursor, mapName):
 		drop table split_paths;",
 		(AsIs(pathsTableName), AsIs("puntos_a_conectar"), AsIs(pathsTableName), AsIs(pathsTableName))
 	)
+	'''
+	a.camino in (select b.camino from % s p, % s b where ST_covers(ST_snap(p.camino, b.camino, 0.00001), \
+	b.camino) and b.id != p.id) or'''
 
 	# update paths table with additional information: tabla_origen, haversine distance (in meters) and total cost
 	cursor.execute("with line_counts (cts, id) as (select ST_NPoints(camino) - 1, id from %s),\
