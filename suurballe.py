@@ -90,45 +90,61 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 		# if source is an isolated point, it only needs 1 path
 		if geom in limitrofes:
 			paths = get_single_path(graph, s, target)
-			all_ids = process_paths(paths, p, graph, points, target, points_grid)
-			flattened_ids = [y for x in all_ids for y in x]
+			all_ids = list(process_paths(paths, p, graph, points, target, points_grid, single=True))
+		# flattened_ids = [y for x in all_ids for y in x]
 		else:
 			# list of disjoint paths from s to each target
 			paths = suurballe(graph, s, target)
 			# process paths to obtain the corresponding table IDs
 			all_ids = process_paths(paths, p, graph, points, target, points_grid)
 			# capitals must have three paths
-			if geom in capitales:
-				thrid_path = find_third_path(graph, s, all_ids, target, points_grid)
-				all_ids = all_ids + thrid_path
-			# add IDs to psql table
-			flattened_ids = [y for x in all_ids for y in x]
-		update_table(needed_paths_name, cursor, flattened_ids)
+			if geom in capitales and geom:
+				thrid_path = find_third_path(graph, points, s, p, all_ids, target, points_grid)
+				all_ids = list(all_ids) + thrid_path
+		# add IDs to psql table
+		# flattened_ids = [y for x in all_ids for y in x]
+		update_table(needed_paths_name, cursor, all_ids)
 	pprint(points_grid)
 
 
 # Process the paths obtained, filling the grid accordingly and returning all edges' ID
-def process_paths(paths, p, graph, points, target, points_grid):
-	all_ids = []
+def process_paths(paths, p, graph, points, target, points_grid, single=False):
+	all_ids = set([])
 	# for each comuna's paths
 	for path in paths:
-		# first and second are tuple lists like ((i, j), id)
-		first = path[0]
-		second = path[1]
 		# obtain target point corresponding to paths
 		target_index = paths.index(path)
 		point_index = points.index(graph.vs[target[target_index]]['name'])
-
-		# fill points grid accordingly
-		not_empty = fill_grid(points_grid, p, point_index, first, second)
-
+		inc = 0
+		if single and path:
+			# only one path per comuna
+			inc = 1
+			fill_grid(points_grid, p, point_index, inc)
+			joint_paths = path
+		elif path:
+			# first and second are tuple lists like ((i, j), id)
+			first = path[0]
+			second = path[1]
+			# how many paths were found
+			inc = count_paths(first, second)
+			# fill points grid accordingly
+			fill_grid(points_grid, p, point_index, inc)
+			joint_paths = first + second
 		# add paths to list of needed paths
-		if not_empty:
-			path_ids = []
-			for (i, j), id in first + second:
-				path_ids.append((id,))
-			all_ids.append(path_ids)
+		if inc:
+			for (i, j), id in joint_paths:
+				all_ids.add((id,))
 	return all_ids
+
+
+# returns the number of paths found
+def count_paths(first, second):
+	if (first and second):
+		return 2
+	elif first or second:
+		return 1
+	else:
+		return 0
 
 
 # Returns list of shortest paths from source to each target in target_list
@@ -149,19 +165,10 @@ def compute_targets(graph, points, points_grid, p):
 	return target
 
 
-# fills points grid given paths from source to target and returns if there paths were not empty
-def fill_grid(points_grid, source_index, target_index, first, second):
-	# si ambos caminos existen
-	if first != [] and second != []:
-		points_grid[source_index][target_index] += 2
-		points_grid[target_index][source_index] += 2
-		return True
-	elif (first != [] and second == []) or (second != [] and first == []):
-		points_grid[source_index][target_index] += 1
-		points_grid[target_index][source_index] += 1
-		return True
-	else:
-		return False
+# fills points grid given paths from source to target according to increment
+def fill_grid(points_grid, source_index, target_index, increment):
+	points_grid[source_index][target_index] += increment
+	points_grid[target_index][source_index] += increment
 
 
 # returns two disjoint shortest paths from source vertex to each point in target_list
@@ -209,23 +216,30 @@ def suurballe(graph, source, target_list, directed=False):
 
 
 # find a third disjoint path between source and target
-def find_third_path(graph, source, path_ids, target, points_grid):
-	paths = []
-	for i in range(len(path_ids)):
-		# for psql reasons the format is (id,)
-		edge_index = graph.es.select(lambda edge: (edge["id"],) in path_ids[i])
-		# copy the graph so we can delete the edges
-		graph_copy = graph.copy()
-		graph_copy.delete_edges(edge_index)
-		# we only need the first element because there's only one target
-		path = graph_copy.get_shortest_paths(source, weights="weight", to=target[i], output="epath")[0]
-		for s in range(len(path)):
+def find_third_path(graph, points, source, p, path_ids, target, points_grid):
+	# for psql reasons the format is (id,)
+	edge_index = graph.es.select(lambda edge: (edge["id"],) in list(path_ids))
+	# copy the graph so we can delete the edges
+	graph_copy = graph.copy()
+	graph_copy.delete_edges(edge_index)
+	# find shortest distance to the other vertices
+	new_distance = graph_copy.shortest_paths_dijkstra(source, target=target, weights="weight", mode=OUT)
+	# select target with shortest distance
+	target_index = target.index(min(new_distance[0]))
+	points_index = points.index(graph.vs[target[target_index]]['name'])
+	# get path to selected target
+	path = graph_copy.get_shortest_paths(source, weights="weight", to=target[target_index], output="epath")[0]
+	if path:
+		new_path = []
+		for s in path:
 			# obtain actual edge id
-			id = graph_copy.es.find(path[s])["id"]
-			path[s] = id
-		update_grid(points_grid, source, target[i])
-		paths.append(path)
-	return paths
+			id = graph_copy.es.find(s)["id"]
+			new_path.append(id)
+		fill_grid(points_grid, p, points_index, 1)
+	else:
+		pass
+
+	return path
 
 
 # insert paths into table
@@ -233,12 +247,6 @@ def update_table(table_name, cursor, path_ids):
 	if path_ids:
 		query = "insert into " + table_name + " (path_id) values %s;"
 		execute_values(cursor, query, path_ids)
-
-
-# sum 1 in specific point
-def update_grid(points_grid, source, target):
-	points_grid[source][target] += 1
-	points_grid[target][source] += 1
 
 
 # returns copy of graph in which tree edges are reversed and edge weights are transformed for Suurballe
