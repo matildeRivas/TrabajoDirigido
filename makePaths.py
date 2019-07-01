@@ -118,7 +118,7 @@ def findIntersections(segments, cursor, tableName, filteredTableName):
 # Creates a map with all paths 
 def intersectionsQueries(cursor, mapName):
 	# creates table with costs
-	cursor.execute("create table costs_table (type varchar, cost_per_km int);")
+	cursor.execute("create table if not exists costs_table (type varchar, cost_per_km int);")
 	cursor.execute(
 		"insert into costs_table values ('nada', 25000), ('postacion', 17000), ('fibra', 0), ('ferry', 50000);")
 	# truncates points in map

@@ -91,7 +91,6 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 		if geom in limitrofes:
 			paths = get_single_path(graph, s, target)
 			all_ids = list(process_paths(paths, p, graph, points, target, points_grid, single=True))
-		# flattened_ids = [y for x in all_ids for y in x]
 		else:
 			# list of disjoint paths from s to each target
 			paths = suurballe(graph, s, target)
@@ -99,10 +98,17 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 			all_ids = process_paths(paths, p, graph, points, target, points_grid)
 			# capitals must have three paths
 			if geom in capitales and geom:
-				thrid_path = find_third_path(graph, points, s, p, all_ids, target, points_grid)
-				all_ids = list(all_ids) + thrid_path
+				# check if third connection hasn't been registered already
+				if max_connections(points_grid, p) < 3:
+					try:
+						thrid_path = find_third_path(graph, points, s, p, all_ids, target, points_grid)
+						all_ids = list(all_ids) + thrid_path
+					except:
+						point_geom, new_edge_id = create_shortest_connection(map_name, points_name, cursor, geom)
+						graph.add_edge(geom, point_geom, weight=0, id=new_edge_id)
+						fill_grid(points_grid, p, points.index(point_geom), 1)
+						all_ids = list(all_ids).append(new_edge_id)
 		# add IDs to psql table
-		# flattened_ids = [y for x in all_ids for y in x]
 		update_table(needed_paths_name, cursor, all_ids)
 	pprint(points_grid)
 
@@ -224,20 +230,24 @@ def find_third_path(graph, points, source, p, path_ids, target, points_grid):
 	graph_copy.delete_edges(edge_index)
 	# find shortest distance to the other vertices
 	new_distance = graph_copy.shortest_paths_dijkstra(source, target=target, weights="weight", mode=OUT)
-	# select target with shortest distance
-	target_index = target.index(min(new_distance[0]))
-	points_index = points.index(graph.vs[target[target_index]]['name'])
-	# get path to selected target
-	path = graph_copy.get_shortest_paths(source, weights="weight", to=target[target_index], output="epath")[0]
-	if path:
-		new_path = []
-		for s in path:
-			# obtain actual edge id
-			id = graph_copy.es.find(s)["id"]
-			new_path.append(id)
-		fill_grid(points_grid, p, points_index, 1)
-	else:
-		pass
+	try:
+		# select target with shortest distance
+		target_index = target.index(min(new_distance[0]))
+		points_index = points.index(graph.vs[target[target_index]]['name'])
+		# get path to selected target
+		path = graph_copy.get_shortest_paths(source, weights="weight", to=target[target_index], output="epath")[0]
+		if path:
+			new_path = []
+			for s in path:
+				# obtain actual edge id
+				id = graph_copy.es.find(s)["id"]
+				new_path.append(id)
+			fill_grid(points_grid, p, points_index, 1)
+		else:
+			pass
+	except Exception:
+		# must create new path from scratch
+		raise Exception()
 
 	return path
 
@@ -352,6 +362,29 @@ def get_points(cursor, points_name, map_name=None):
 									 (AsIs(map_name), AsIs(points_name)))
 		points_list = cursor.fetchall()
 		return clean_list(points_list)
+
+
+# returns max number of connections that p has
+def max_connections(points_grid, p):
+	return max(points_grid[p])
+
+
+# creates the shortest connection from source to any comuna, returns
+def create_shortest_connection(map_name, points_name, cursor, geom):
+	# find building cost and point id of closest comuna
+	cursor.execute(
+		"select b.pun_geom, min(ST_DistanceSphere(a.pun_geom, b.pun_geom)) m from %s a,%s b where a.pun_geom=%s and a.pun_id != b.pun_id group by b.pun_geom order by m limit 1;",
+		(AsIs(points_name), AsIs(points_name), geom))
+	pun_geom, distance = cursor.fetchall()[0]
+	cursor.execute("select cost_per_km from costs_table where type='nada';")
+	path_cost = (distance / 1000) * cursor.fetchone()[0]
+	# camino geometry, x1 float, y1 float, x2 float, y2 float, tipo varchar(255), id_origen int, largo float, costo int, tabla_origen varchar(255), origen geometry, fin geometry
+	cursor.execute("insert into %s (camino, x1, y1, x2, y2, tipo, largo, costo, origen, fin )\
+	 values (ST_makeline(%s, %s), ST_X(%s), ST_Y(%s),  ST_X(%s), ST_Y(%s), 'nada', ST_DistanceSphere(%s,%s), %s,%s, %s) returning id; ", \
+								 (AsIs(map_name), geom, pun_geom, geom, geom, pun_geom, pun_geom, geom, pun_geom, path_cost, geom,
+									pun_geom))
+	edge_id = cursor.fetchone()[0]
+	return pun_geom, edge_id
 
 
 if __name__ == "__main__":
