@@ -3,7 +3,6 @@ from psycopg2.extensions import AsIs
 import sys
 import pprint
 from config import config
-from queries import *
 
 
 def main(argv):

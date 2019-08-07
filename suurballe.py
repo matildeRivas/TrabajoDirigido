@@ -70,7 +70,7 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 	graph = Graph.TupleList(edges, directed=False, vertex_name_attr="name", edge_attrs=("id", "weight"))
 
 	# get valid points (comunas)
-	points = get_points(cursor, points_name, map_name)
+	points = get_points(cursor, points_name)
 	# create a grid to mark found paths
 	points_grid = np.zeros((len(points), len(points)))
 	# fill the grid's diagonal
@@ -81,21 +81,33 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 
 	# for each point we must connect
 	for p in range(len(points)):
+		geom = points[p]
+		try:
+			s = graph.vs.find(name=geom)
+		except:
+			graph.add_vertex(name=geom)
+			s = graph.vs.find(name=geom)
+	for p in range(len(points)):
 		print("buscando desde comuna ", p)
 		geom = points[p]
 		# list of target comunas
 		target = compute_targets(graph, points, points_grid, p)
 		# source vertex associated to p
-		s = graph.vs.find(name=geom)
+		try:
+			s = graph.vs.find(name=geom)
+		except:
+			graph.add_vertex(name=geom)
+			s = graph.vs.find(name=geom)
 		# if source is an isolated point, it only needs 1 path
 		if geom in limitrofes:
 			paths = get_single_path(graph, s, target)
-			all_ids = list(process_paths(paths, p, graph, points, target, points_grid, single=True))
+			all_ids = list(
+				process_paths(paths, p, graph, points, target, points_grid, map_name, points_name, cursor, geom, single=True))
 		else:
 			# list of disjoint paths from s to each target
 			paths = suurballe(graph, s, target)
 			# process paths to obtain the corresponding table IDs
-			all_ids = process_paths(paths, p, graph, points, target, points_grid)
+			all_ids = process_paths(paths, p, graph, points, target, points_grid, map_name, points_name, cursor, geom)
 			# capitals must have three paths
 			if geom in capitales and geom:
 				# check if third connection hasn't been registered already
@@ -104,17 +116,15 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 						thrid_path = find_third_path(graph, points, s, p, all_ids, target, points_grid)
 						all_ids = list(all_ids) + thrid_path
 					except:
-						point_geom, new_edge_id = create_shortest_connection(map_name, points_name, cursor, geom)
-						graph.add_edge(geom, point_geom, weight=0, id=new_edge_id)
-						fill_grid(points_grid, p, points.index(point_geom), 1)
-						all_ids = list(all_ids).append(new_edge_id)
+						all_ids = list(all_ids).append(
+							process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid))
 		# add IDs to psql table
 		update_table(needed_paths_name, cursor, all_ids)
 	pprint(points_grid)
 
 
 # Process the paths obtained, filling the grid accordingly and returning all edges' ID
-def process_paths(paths, p, graph, points, target, points_grid, single=False):
+def process_paths(paths, p, graph, points, target, points_grid, map_name, points_name, cursor, geom, single=False):
 	all_ids = set([])
 	# for each comuna's paths
 	for path in paths:
@@ -140,6 +150,9 @@ def process_paths(paths, p, graph, points, target, points_grid, single=False):
 		if inc:
 			for (i, j), id in joint_paths:
 				all_ids.add((id,))
+		if inc != 2:
+			new_edge = process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid)
+			all_ids.add((new_edge,))
 	return all_ids
 
 
@@ -151,6 +164,13 @@ def count_paths(first, second):
 		return 1
 	else:
 		return 0
+
+
+def process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid):
+	point_geom, new_edge_id = create_shortest_connection(map_name, points_name, cursor, geom)
+	graph.add_edge(geom, point_geom, weight=0, id=new_edge_id)
+	fill_grid(points_grid, p, points.index(point_geom), 1)
+	return new_edge_id
 
 
 # Returns list of shortest paths from source to each target in target_list
@@ -377,12 +397,11 @@ def create_shortest_connection(map_name, points_name, cursor, geom):
 		(AsIs(points_name), AsIs(points_name), geom))
 	pun_geom, distance = cursor.fetchall()[0]
 	cursor.execute("select cost_per_km from costs_table where type='nada';")
-	path_cost = (distance / 1000) * cursor.fetchone()[0]
+	path_cost = round((distance / 1000) * 1000000 * cursor.fetchone()[0])
 	# camino geometry, x1 float, y1 float, x2 float, y2 float, tipo varchar(255), id_origen int, largo float, costo int, tabla_origen varchar(255), origen geometry, fin geometry
-	cursor.execute("insert into %s (camino, x1, y1, x2, y2, tipo, largo, costo, origen, fin )\
-	 values (ST_makeline(%s, %s), ST_X(%s), ST_Y(%s),  ST_X(%s), ST_Y(%s), 'nada', ST_DistanceSphere(%s,%s), %s,%s, %s) returning id; ", \
-								 (AsIs(map_name), geom, pun_geom, geom, geom, pun_geom, pun_geom, geom, pun_geom, path_cost, geom,
-									pun_geom))
+	cursor.execute(
+		"INSERT INTO %s (camino, x1, y1, x2, y2, tipo, largo, costo, origen, fin) VALUES (ST_makeline(%s, %s), ST_X(%s), ST_Y(%s), ST_X(%s), ST_Y(%s), 'nada' ,%s, %s, %s,  %s ) returning id; ", \
+		(AsIs(map_name), geom, pun_geom, geom, geom, pun_geom, pun_geom, distance, path_cost, geom, pun_geom))
 	edge_id = cursor.fetchone()[0]
 	return pun_geom, edge_id
 
