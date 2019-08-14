@@ -116,10 +116,18 @@ def find_paths(map_name, points_name, cursor, needed_paths_name):
 						thrid_path = find_third_path(graph, points, s, p, all_ids, target, points_grid)
 						all_ids = list(all_ids) + thrid_path
 					except:
-						all_ids = list(all_ids).append(
-							process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid))
+						all_ids = list(all_ids) + \
+											process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid)
 		# add IDs to psql table
+		plain_ids = [str(x[0]) for x in all_ids]
+		log = open('caminos.txt', 'a')
+		log.write("\n".join(plain_ids))
+		log.write("\n")
+		log.close()
 		update_table(needed_paths_name, cursor, all_ids)
+	# create missing paths
+	update_table(needed_paths_name, cursor,
+							 create_direct_paths(map_name, points_name, cursor, graph, points_grid, points))
 	pprint(points_grid)
 
 
@@ -150,9 +158,6 @@ def process_paths(paths, p, graph, points, target, points_grid, map_name, points
 		if inc:
 			for (i, j), id in joint_paths:
 				all_ids.add((id,))
-		if inc != 2:
-			new_edge = process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid)
-			all_ids.add((new_edge,))
 	return all_ids
 
 
@@ -166,10 +171,43 @@ def count_paths(first, second):
 		return 0
 
 
+def create_direct_paths(map_name, points_name, cursor, graph, points_grid, points):
+	new_edges = set([])
+	for i in range(len(points)):
+		for j in range(len(points)):
+			# we must create a path to nearest connection
+			if points_grid[i][j] == 0:
+				new_edge = process_new_path(map_name, points_name, cursor, points[i], graph, i, points, points_grid)
+				if new_edge != -1:
+					new_edges.add((new_edge,))
+	return new_edges
+
+
+# creates a new connection between p and the nearest comuna
 def process_new_path(map_name, points_name, cursor, geom, graph, p, points, points_grid):
-	point_geom, new_edge_id = create_shortest_connection(map_name, points_name, cursor, geom)
-	graph.add_edge(geom, point_geom, weight=0, id=new_edge_id)
-	fill_grid(points_grid, p, points.index(point_geom), 1)
+	closest = get_closest(cursor, points_name, geom)
+	if points_grid[points.index(geom)][points.index(closest)] == 0:
+		point_geom, new_edge_id = create_shortest_connection(map_name, cursor, geom, points_name=points_name)
+		graph.add_edge(geom, point_geom, weight=0, id=new_edge_id)
+		fill_grid(points_grid, p, points.index(point_geom), 1)
+		return [new_edge_id]
+	else:
+		return []
+
+
+def get_closest(cursor, points_name, geom):
+	cursor.execute(
+		"select b.pun_geom, min(ST_DistanceSphere(a.pun_geom, b.pun_geom)) m from %s a,%s b where a.pun_geom=%s and a.pun_id != b.pun_id group by b.pun_geom order by m limit 1;",
+		(AsIs(points_name), AsIs(points_name), geom))
+	target, distance = cursor.fetchall()[0]
+	return target
+
+
+# creates new connection between two vertex
+def new_connection(map_name, cursor, geom, graph, points, target, points_grid):
+	target, new_edge_id = create_shortest_connection(map_name, cursor, geom, target=target)
+	graph.add_edge(geom, target, weight=0, id=new_edge_id)
+	fill_grid(points_grid, points.index(geom), points.index(target), 1)
 	return new_edge_id
 
 
@@ -390,20 +428,30 @@ def max_connections(points_grid, p):
 
 
 # creates the shortest connection from source to any comuna, returns
-def create_shortest_connection(map_name, points_name, cursor, geom):
-	# find building cost and point id of closest comuna
-	cursor.execute(
-		"select b.pun_geom, min(ST_DistanceSphere(a.pun_geom, b.pun_geom)) m from %s a,%s b where a.pun_geom=%s and a.pun_id != b.pun_id group by b.pun_geom order by m limit 1;",
-		(AsIs(points_name), AsIs(points_name), geom))
-	pun_geom, distance = cursor.fetchall()[0]
+def create_shortest_connection(map_name, cursor, geom, target=None, points_name=None):
+	if target == None:
+		# find building cost and point id of closest comuna
+		cursor.execute(
+			"select b.pun_geom, min(ST_DistanceSphere(a.pun_geom, b.pun_geom)) m from %s a,%s b where a.pun_geom=%s and a.pun_id != b.pun_id group by b.pun_geom order by m limit 1;",
+			(AsIs(points_name), AsIs(points_name), geom))
+		target, distance = cursor.fetchall()[0]
+	else:
+		cursor.execute(
+			"SELECT ST_DistanceSphere(%s, %s) ;",
+			(geom, target))
+		distance = cursor.fetchone()[0]
 	cursor.execute("select cost_per_km from costs_table where type='nada';")
-	path_cost = round((distance / 1000) * 1000000 * cursor.fetchone()[0])
+	path_cost = round((distance / 1000) * math.sqrt(2) * cursor.fetchone()[0])
+	new_path_log = open('caminos_nuevos.txt', 'a')
+	new_path_log.write("\t".join((str(geom), str(target), str(path_cost))))
+	new_path_log.write("\n")
+	new_path_log.close()
 	# camino geometry, x1 float, y1 float, x2 float, y2 float, tipo varchar(255), id_origen int, largo float, costo int, tabla_origen varchar(255), origen geometry, fin geometry
 	cursor.execute(
 		"INSERT INTO %s (camino, x1, y1, x2, y2, tipo, largo, costo, origen, fin) VALUES (ST_makeline(%s, %s), ST_X(%s), ST_Y(%s), ST_X(%s), ST_Y(%s), 'nada' ,%s, %s, %s,  %s ) returning id; ", \
-		(AsIs(map_name), geom, pun_geom, geom, geom, pun_geom, pun_geom, distance, path_cost, geom, pun_geom))
+		(AsIs(map_name), geom, target, geom, geom, target, target, distance, path_cost, geom, target))
 	edge_id = cursor.fetchone()[0]
-	return pun_geom, edge_id
+	return target, edge_id
 
 
 if __name__ == "__main__":
