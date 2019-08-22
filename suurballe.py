@@ -178,8 +178,8 @@ def create_direct_paths(map_name, points_name, cursor, graph, points_grid, point
 			# we must create a path to nearest connection
 			if points_grid[i][j] == 0:
 				new_edge = process_new_path(map_name, points_name, cursor, points[i], graph, i, points, points_grid)
-				if new_edge != -1:
-					new_edges.add((new_edge,))
+				if new_edge:
+					new_edges.add((new_edge[0],))
 	return new_edges
 
 
