@@ -247,7 +247,6 @@ def suurballe(graph, source, target_list, directed=False):
 
 	shortest_path = get_edges(graph, edge_path)
 	# problem_vertex contains vertices without two paths
-	problem_vertex = []
 	result = []
 
 	# create transformed graph Gv for each V. Future: one unified graph
@@ -268,11 +267,9 @@ def suurballe(graph, source, target_list, directed=False):
 				result.append(pair)
 			except Exception:
 				result.append((path_1, []))
-				problem_vertex.append(v)
 		# if vertex is unreachable
 		elif distance[v] == float("inf"):
 			result.append(([], []))
-			problem_vertex.append(v)
 
 		else:
 			result.append([])
@@ -351,7 +348,7 @@ def reverse_edges(gv, graph, edge_path, v):
 	gv.es["id"] = gv_edge_id
 
 
-# returns edges in edge_path as source and target IDs and edge ID
+# returns edges in edge_path as source and target IDs and edge ID (from map)
 def get_edges(graph, edge_path):
 	edges = graph.get_edgelist()
 	edges_as_pairs = []
