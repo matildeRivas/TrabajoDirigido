@@ -27,12 +27,12 @@ password=<contraseña>
 ```
 Se pueden cambiar los tipos de caminos y su costo asociado modificando `costsDictionary`, donde el tipo es la llave y el costo por kilómetro el valor.
 
-Para ejecutar, correr ``` python3 intersections.py <nombre mapa> <tipo de camino> ``` en consola
+Para ejecutar, correr ``` python3 makepaths.py <nombre mapa> ``` en consola
 
 ### Requisitos previos
 * Python 3.5 o mayor
 * Base de datos PSQL extendida con PostGIS
-* Mapa a procesar debe tener columna `geom` que contenga geometrías tipo linestring y un identificador en la columna `id `
+* Mapa a procesar debe tener columna `geom` que contenga geometrías tipo linestring, un identificador en la columna `id ` y una columna `tipo`
 * La base de datos debe permitir la creación de las tablas "<mapa>\_points", "filtered_<mapa>_points", "<mapa\_intersections", "caminos\_<mapa>". Las primeras dos tablas serán eliminadas al terminar el programa.
 
 ##Suurballe
